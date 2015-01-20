@@ -38,14 +38,11 @@ class SerialRXModule : public UCModule {
     return NULL;
   }
 
-  // A SerialRXModule accepts no messages.
-  //virtual bool AcceptMessage(const Message &message);
   virtual bool AcceptMessage(const Message &message) {
     if (!sending_) {
       int length;
       const unsigned char* command = message.command(&length);
-      //if (command[0] == 'S' && command[1] == 'e' && command[2] == 't') {
-      if (message.address() != 0) {
+      if (message.address() != address_) {
         bytes_sending_[0] = message.address_length();
         bytes_sending_[1] = length;
         bytes_sending_[2] = 0;
@@ -57,7 +54,6 @@ class SerialRXModule : public UCModule {
         bytes_sending_[length + 4] = message.second_checksum();
         bytes_sending_[length + 4 + 1] = message.first_checksum();
         sending_ = true;
-        //index_sending_ = 1;
         timed_callback_ = new TimedCallback<SerialRXModule>(0, this,
             &SerialRXModule::SendBytes);
         return true;
