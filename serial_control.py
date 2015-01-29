@@ -119,7 +119,6 @@ class SerialInterface(object):
     for b in data:
       first_sum = (first_sum + ord(b)) & 0xff
       second_sum = (second_sum + first_sum) & 0xff
-      print "%d   fletcher first: %d   second: %d" % (ord(b), first_sum, second_sum)
     return first_sum, second_sum
 
   def Write(self, address, command, timeout=0):
