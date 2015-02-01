@@ -24,9 +24,9 @@ class SerialRXModule : public UCModule {
       clear_on_next_tick_ = false;
       message_.Clear();
     }
-    while (software_serial_->available()) {
+    while (Serial.available()) {  //software_serial_->available()) {
       bool finished = message_.AddByte(
-          (unsigned char)software_serial_->read() & 0xff);
+          (unsigned char)Serial.read() & 0xff);
       if (finished) {
         clear_on_next_tick_ = true;
         return &message_;
@@ -64,7 +64,7 @@ class SerialRXModule : public UCModule {
 
   void SendBytes() {
     for (int i = 0; i < length_sending_; ++i) {
-      software_serial_->write(bytes_sending_[i]);
+      Serial.write(bytes_sending_[i]);
     }
     sending_ = false;
   }
