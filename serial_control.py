@@ -23,6 +23,8 @@ class Message:
 
   def AddByte(self, byte):
     if not self.has_address_length:
+      if (byte != 1):
+        self.error = True
       self.address_length = byte
       self.has_address_length = True
     elif not self.has_command_length:
@@ -38,11 +40,12 @@ class Message:
     elif self.byte_index - self.address_length < self.command_length:
       self.command.append(byte)
       self.byte_index += 1
-      # if self.address_length + self.command_length == self.byte_index:
-      #   return True
+      if self.no_checksums and self.address_length + self.command_length == self.byte_index:
+        return True
     elif self.byte_index - self.address_length == self.command_length:
       self.byte_index += 1
       if byte != self.second_checksum:
+        print "Error -- bad checksum."
         self.error = True
       return False
     elif self.byte_index - self.address_length == self.command_length + 1:
@@ -82,13 +85,12 @@ class SerialInterface(object):
     self.message = Message()
 
   def Connect(self):
-    self.ser = serial.Serial(self.port, 9600, timeout=0)
-    time.sleep(10)
+    self.ser = serial.Serial(self.port, 9600, timeout=0)  # 1s timeout
+    time.sleep(1.0)
 
   def ReconnectIfNeeded(self):
     if time.time() > self.last_port_lookup_time + 30.0:
       serial_ports = ["/dev/" + x for x in os.listdir("/dev/") if "ttyACM" in x]
-      print serial_ports
       new_ports = [x for x in serial_ports if x not in self.old_ports]
       if new_ports:
         self.port = new_ports[0]
@@ -126,7 +128,7 @@ class SerialInterface(object):
     for retry in range(3):
       for byte in self.MessageToBytes(address, command, timeout):
         self.ser.write(str(byte))
-      time.sleep(0.1)  # 100 msec
+      time.sleep(0.01)  # 10 msec
 
   def TurnLightOn(self, outside=False):
     address = 1
@@ -161,20 +163,24 @@ class SerialInterface(object):
         print char
     self.Write(0, command)
 
-  def Read(self):
+  def Read(self, no_checksums=False):
+    self.message.no_checksums = no_checksums
     byte = self.ser.read()
     if byte:
-      print ord(byte)
+      # print ord(byte)
       complete = self.message.AddByte(ord(byte))
       if complete:
         complete_message = self.message
         self.message = Message()
+        # print "Good message."
         return complete_message
       elif self.message.Error():
+        # print "Bad message."
         self.message = Message()
     return None
 
   def Clear(self):
+    print "Clearing message."
     self.message = Message()
 
 def main():

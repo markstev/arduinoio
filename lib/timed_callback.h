@@ -7,13 +7,18 @@ template<class T>
 class TimedCallback {
  public:
   TimedCallback(unsigned long msec_delay, T* object, void (T::*member_func)())
-    : msec_delay_(msec_delay), object_(object), member_func_(member_func) {
-    start_time_ = millis();
+    : usec_delay_(msec_delay * 1000), object_(object), member_func_(member_func) {
+    start_time_ = micros();
+  }
+
+  TimedCallback(bool unused_bool, unsigned long usec_delay, T* object, void (T::*member_func)())
+    : usec_delay_(usec_delay), object_(object), member_func_(member_func) {
+    start_time_ = micros();
   }
 
   void Update() {
-    unsigned long now = millis();
-    if (now - start_time_ > msec_delay_) {
+    unsigned long now = micros();
+    if (now - start_time_ > usec_delay_) {
       (object_->*member_func_)();
       delete this;
     }
@@ -25,7 +30,7 @@ class TimedCallback {
   T* object_;
   void (T::*member_func_)();
   unsigned long start_time_;
-  unsigned long msec_delay_;
+  unsigned long usec_delay_;
 };
 
 }  // namespace arduinoio
