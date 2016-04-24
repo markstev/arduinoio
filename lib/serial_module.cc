@@ -12,6 +12,9 @@ const Message* SerialRXModule::Tick() {
   if (clear_on_next_tick_) {
     clear_on_next_tick_ = false;
     message_.Clear();
+    Message rx_ack_message(1, 1, "R");
+    AcceptMessage(rx_ack_message);
+    return NULL;
   }
   while (software_serial_->available()) {
     bool finished = message_.AddByte(
@@ -44,9 +47,10 @@ bool SerialRXModule::AcceptMessage(const Message &message) {
       bytes_sending_[length + 4] = message.second_checksum();
       bytes_sending_[length + 4 + 1] = message.first_checksum();
       sending_ = true;
+      SendBytes();
       //index_sending_ = 1;
-      timed_callback_ = new TimedCallback<SerialRXModule>(0, this,
-          &SerialRXModule::SendBytes);
+    //timed_callback_ = new TimedCallback<SerialRXModule>(0, this,
+    //    &SerialRXModule::SendBytes);
       return true;
     }
   }

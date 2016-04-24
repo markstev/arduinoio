@@ -81,11 +81,12 @@ class SerialInterface(object):
   def __init__(self):
     self.last_port_lookup_time = 0
     self.old_ports = []
-    self.ReconnectIfNeeded()
+    self.last_read_time = time.time()
     self.message = Message()
+    self.ReconnectIfNeeded()
 
   def Connect(self):
-    self.ser = serial.Serial(self.port, 9600, timeout=0)  # 1s timeout
+    self.ser = serial.Serial(self.port, 115200, timeout=0)  # 1s timeout
     time.sleep(1.0)
 
   def ReconnectIfNeeded(self):
@@ -125,49 +126,30 @@ class SerialInterface(object):
 
   def Write(self, address, command, timeout=0):
     self.ReconnectIfNeeded()
-    for retry in range(3):
+    for retry in range(10):
       for byte in self.MessageToBytes(address, command, timeout):
         self.ser.write(str(byte))
       time.sleep(0.01)  # 10 msec
-
-  def TurnLightOn(self, outside=False):
-    address = 1
-    if outside:
-      address = 2
-    self.TurnLightOverIR(Command.LIGHT_ON, address=address)
-
-  def TurnLightOff(self, outside=False):
-    address = 1
-    if outside:
-      address = 2
-    self.TurnLightOverIR(Command.LIGHT_OFF, address=address)
-
-  def TurnLightOverIR(self, base_command, address=1):
-    print "setting light over IR"
-    command = "IRTX\0" + "".join(self.MessageToBytes(address, base_command))
-    print "command is: %s" % command
-    self.Write(0, command)
-
-  def SendBogusOverIR(self):
-    for char in self.MessageToBytes(1, "SetLightOn"):
-      print ord(char)
-    raw_message = self.MessageToBytes(1, "SetLightOn")
-    raw_message[1] = "G"
-    command = "IRTX\0" + "".join(raw_message)
-    print command
-    for char in command:
-      print ord(char)
-      try:
-        print int(char)
-      except ValueError:
-        print char
-    self.Write(0, command)
+      while True:
+        message = self.Read(no_checksums=True)
+        if message:
+          if message.command[0] == ord("R"):
+            return
+          elif message.command[0] == ord("E"):
+            print "Error; resending"
+            break
+          else:
+            print "Unknown command: %s" % message.command[0]
 
   def Read(self, no_checksums=False):
+    if time.time() - self.last_read_time > 0.01:  # seconds
+      #print "Reset read"
+      self.message = Message()
     self.message.no_checksums = no_checksums
     byte = self.ser.read()
     if byte:
-      # print ord(byte)
+      self.last_read_time = time.time()
+      #print ord(byte)
       complete = self.message.AddByte(ord(byte))
       if complete:
         complete_message = self.message
@@ -182,53 +164,3 @@ class SerialInterface(object):
   def Clear(self):
     print "Clearing message."
     self.message = Message()
-
-def main():
-  interface = SerialInterface()
-  while 1:
-    base_command = "SetLight" # OUT OF DATE 20140101
-    cmd = raw_input("enter command:")
-    if cmd == "on":
-      print "sending turn light on command"
-      #interface.TurnLightOn()
-      interface.TurnLightOverIR(base_command, "On")
-      # while True:
-      #   message = interface.Read()
-      #   if message:
-      #     break
-      #print "Read %s" % message
-    if cmd == "off":
-      print "sending turn light off command"
-      #interface.TurnLightOff()
-      interface.TurnLightOverIR(base_command, "Off")
-      # while True:
-      #   message = interface.Read()
-      #   if message:
-      #     break
-      #print "Read %s" % message
-    if cmd == "bogus":
-      interface.SendBogusOverIR()
-    if cmd == "listen":
-      while True:
-        message = interface.Read()
-        if message:
-          print "Read %s" % message
-        
-  #if cmd == "off":
-  #if cmd == "listen":
-  ##while 1:
-  ##  message = interface.Read()
-  ##  if message:
-  ##    print message
-  ##    break
-  print sys.argv[1]
-  if sys.argv[1] == "TurnLightOn":
-    print "sending turn light on command"
-    interface.TurnLightOn()
-  elif sys.argv[1] == "TurnLightOff":
-    print "sending turn light off command"
-    interface.TurnLightOff()
-
-
-if __name__ == "__main__":
-  main()

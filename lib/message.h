@@ -41,6 +41,10 @@ class Message {
     second_checksum_ = 0;
     error_ = false;
   }
+
+  bool Empty() {
+    return has_address_length_;
+  }
   
   // Returns true when the message is complete.
   bool AddByte(unsigned char next_byte) {
