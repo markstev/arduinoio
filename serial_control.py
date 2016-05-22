@@ -1,11 +1,15 @@
 import os
+import logging
 import serial
 import sys
 import time
 
+logging.basicConfig(level=logging.INFO,
+    format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
+    datefmt='%m-%d %H:%M:%S')
 
 class Message:
-  def __init__(self):
+  def __init__(self, expected_length=-1):
     self.address_length = 0
     self.command_length = 0
     self.timeout = 0
@@ -21,6 +25,8 @@ class Message:
     self.second_checksum = 0
     self.error = False
 
+    self.expected_length = expected_length
+
   def AddByte(self, byte):
     if not self.has_address_length:
       if (byte != 1):
@@ -30,6 +36,11 @@ class Message:
     elif not self.has_command_length:
       self.command_length = byte
       self.has_command_length = True
+      if self.expected_length > -1 and self.address_length + self.command_length != self.expected_length:
+        logging.error("Expected length on read did not match.")
+        self.error = True
+        self.command_length = self.expected_length - 1
+        self.address_length = 1
     elif not self.has_timeout:
       self.timeout = byte
       self.has_timeout = True
@@ -40,12 +51,13 @@ class Message:
     elif self.byte_index - self.address_length < self.command_length:
       self.command.append(byte)
       self.byte_index += 1
-      if self.no_checksums and self.address_length + self.command_length == self.byte_index:
+      if (self.byte_index - self.address_length == self.command_length) and self.no_checksums:
         return True
     elif self.byte_index - self.address_length == self.command_length:
       self.byte_index += 1
       if byte != self.second_checksum:
-        print "Error -- bad checksum."
+        logging.info("Checksums enabled: %s", not self.no_checksums)
+        logging.error("Error -- bad checksum.")
         self.error = True
       return False
     elif self.byte_index - self.address_length == self.command_length + 1:
@@ -54,7 +66,7 @@ class Message:
         self.error = True
       return not self.error
     else:
-      print "Error -- message not properly processed"
+      logging.error("Error -- message not properly processed")
       self.error = True
     self.first_checksum = (self.first_checksum + byte) & 0xff
     self.second_checksum = (self.second_checksum + self.first_checksum) & 0xff
@@ -95,7 +107,7 @@ class SerialInterface(object):
       new_ports = [x for x in serial_ports if x not in self.old_ports]
       if new_ports:
         self.port = new_ports[0]
-        print "changing port to %s" % self.port
+        logging.info("changing port to %s" % self.port)
         self.old_ports.extend(new_ports)
         self.Connect()
         self.last_port_lookup_time = time.time()
@@ -125,42 +137,51 @@ class SerialInterface(object):
     return first_sum, second_sum
 
   def Write(self, address, command, timeout=0):
+    t = time.time()
     self.ReconnectIfNeeded()
     for retry in range(10):
       for byte in self.MessageToBytes(address, command, timeout):
         self.ser.write(str(byte))
-      time.sleep(0.01)  # 10 msec
+      time.sleep(0.001)  # 1 msec
+      self.message = Message(expected_length=2)
       while True:
-        message = self.Read(no_checksums=True)
+        if time.time() - t > 1:
+          logging.error("Stuck on Ack")
+          t = time.time()
+        message = self.Read(no_checksums=True, expected_length=2)
         if message:
           if message.command[0] == ord("R"):
+            if retry > 0:
+              logging.info("Recovered.")
             return
           elif message.command[0] == ord("E"):
-            print "Error; resending"
+            logging.error("Error; resending")
             break
           else:
-            print "Unknown command: %s" % message.command[0]
+            logging.error("Unknown command: %s" % message.command[0])
+            break
 
-  def Read(self, no_checksums=False):
+  def Read(self, no_checksums=False, expected_length=-1):
     if time.time() - self.last_read_time > 0.01:  # seconds
-      #print "Reset read"
-      self.message = Message()
+      self.message = Message(expected_length=expected_length)
     self.message.no_checksums = no_checksums
     byte = self.ser.read()
     if byte:
+      #logging.info("Time gap: %f", time.time() - self.last_read_time)
       self.last_read_time = time.time()
       #print ord(byte)
       complete = self.message.AddByte(ord(byte))
       if complete:
         complete_message = self.message
-        self.message = Message()
+        self.message = Message(expected_length=expected_length)
         # print "Good message."
         return complete_message
       elif self.message.Error():
         # print "Bad message."
-        self.message = Message()
+        self.message = Message(expected_length=expected_length)
     return None
 
+  # Note: 0.01s timeout on read, and 0.02s delay before read works well.
+
   def Clear(self):
-    print "Clearing message."
     self.message = Message()
