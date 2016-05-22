@@ -1,0 +1,12 @@
+Setup instructions:
+
+sudo apt-get install cmake arduino gcc-avr binutils-avr avr-libc avrdude python-serial
+mkdir build
+cd build
+
+change paths in CMakeLists.txt
+change target arduino version in CMakeLists.txt
+
+cmake ..
+make
+make upload
