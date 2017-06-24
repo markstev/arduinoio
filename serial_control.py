@@ -1,5 +1,6 @@
-import os
+import enum
 import logging
+import os
 import serial
 import sys
 import time
@@ -7,6 +8,13 @@ import time
 logging.basicConfig(level=logging.INFO,
     format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
     datefmt='%m-%d %H:%M:%S')
+
+
+class SlaveState(enum.Enum):
+  READY = 1
+  ERROR = 2
+  UNKNOWN = 3
+
 
 class Message:
   def __init__(self, expected_length=-1):
@@ -90,20 +98,23 @@ class Command(object):
 
 
 class SerialInterface(object):
-  def __init__(self):
+  def __init__(self, device_basename="ttyACM", baud=115200):
     self.last_port_lookup_time = 0
     self.old_ports = []
     self.last_read_time = time.time()
+    self.baud = baud
     self.message = Message()
+    self.device_basename = device_basename
     self.ReconnectIfNeeded()
 
   def Connect(self):
-    self.ser = serial.Serial(self.port, 115200, timeout=0)  # 1s timeout
+    self.ser = serial.Serial(self.port, self.baud, timeout=0, rtscts=True)  # 1s timeout
+    #self.ser = serial.Serial(self.port, 50000, timeout=0)  # 1s timeout
     time.sleep(1.0)
 
   def ReconnectIfNeeded(self):
     if time.time() > self.last_port_lookup_time + 30.0:
-      serial_ports = ["/dev/" + x for x in os.listdir("/dev/") if "ttyACM" in x]
+      serial_ports = ["/dev/" + x for x in os.listdir("/dev/") if self.device_basename in x]
       new_ports = [x for x in serial_ports if x not in self.old_ports]
       if new_ports:
         self.port = new_ports[0]
@@ -138,30 +149,50 @@ class SerialInterface(object):
 
   def Write(self, address, command, timeout=0):
     t = time.time()
+    is_stuck = False
     self.ReconnectIfNeeded()
-    for retry in range(10):
+    for retry in range(1000):
+      while self.GetSlaveState() != SlaveState.READY:
+        pass
+      if retry > 0:
+        logging.info("RETRY MESSAGE: %s", command)
+      #logging.info("Write %s", command)
       for byte in self.MessageToBytes(address, command, timeout):
+        if time.time() - t > 1:
+          logging.error("Stuck on Write, retry=%d", retry)
+          t = time.time()
         self.ser.write(str(byte))
-      time.sleep(0.001)  # 1 msec
-      self.message = Message(expected_length=2)
+      #logging.info("Check %s", command)
       while True:
         if time.time() - t > 1:
-          logging.error("Stuck on Ack")
+          logging.error("Stuck on Ack, retry=%d", retry)
           t = time.time()
-        message = self.Read(no_checksums=True, expected_length=2)
-        if message:
-          if message.command[0] == ord("R"):
-            if retry > 0:
-              logging.info("Recovered.")
-            return
-          elif message.command[0] == ord("E"):
-            logging.error("Error; resending")
-            break
-          else:
-            logging.error("Unknown command: %s" % message.command[0])
-            break
+          is_stuck = True
+        slave_state = self.GetSlaveState()
+        if slave_state == SlaveState.READY:
+          if retry > 0:
+            logging.info("Recovered.")
+          return
+        elif slave_state == SlaveState.ERROR:
+          logging.error("Error; resending")
+          break
+    #logging.info("Write complete (fall through).")
+    raise Exception("failed to write")
 
-  def Read(self, no_checksums=False, expected_length=-1):
+  def GetSlaveState(self):
+    byte = None
+    state = SlaveState.UNKNOWN
+    while state == SlaveState.UNKNOWN or byte:
+      byte = self.ser.read()
+      if byte:
+        if byte == "R":
+          state = SlaveState.READY
+        if byte == "E":
+          state = SlaveState.ERROR
+    #logging.info("Resulting state = %s", state)
+    return state
+
+  def Read(self, no_checksums=False, expected_length=-1, verbose=False):
     if time.time() - self.last_read_time > 0.01:  # seconds
       self.message = Message(expected_length=expected_length)
     self.message.no_checksums = no_checksums
@@ -169,15 +200,18 @@ class SerialInterface(object):
     if byte:
       #logging.info("Time gap: %f", time.time() - self.last_read_time)
       self.last_read_time = time.time()
-      #print ord(byte)
+      if verbose:
+        print ord(byte)
       complete = self.message.AddByte(ord(byte))
       if complete:
         complete_message = self.message
         self.message = Message(expected_length=expected_length)
-        # print "Good message."
+        if verbose:
+          print "Good message."
         return complete_message
       elif self.message.Error():
-        # print "Bad message."
+        if verbose:
+          print "Bad message."
         self.message = Message(expected_length=expected_length)
     return None
 

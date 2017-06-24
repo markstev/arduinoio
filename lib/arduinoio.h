@@ -37,8 +37,6 @@ class ArduinoIO {
         message = modules_[i]->Tick();
       }
       if (message != NULL) {
-        int length;
-        const unsigned char* cmd = message->command(&length);
         for (int j = 0; j < num_modules_; ++j) {
           modules_[j]->AcceptMessage(*message);
         }

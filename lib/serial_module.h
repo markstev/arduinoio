@@ -10,8 +10,10 @@
 
 namespace arduinoio {
 
-unsigned char READY = 0x52;
-unsigned char ERROR = 0x45;
+const unsigned char READY = 0x52;
+const unsigned char ERROR = 0x45;
+
+const int MESSAGE_SIZE = 20;
 
 class SerialRXModule : public UCModule {
  public:
@@ -29,6 +31,7 @@ class SerialRXModule : public UCModule {
       clear_on_next_tick_ = false;
       message_.Clear();
       SendReady();
+      return NULL;
     }
     while (Serial.available()) {  //software_serial_->available()) {
       last_message_time_ = micros();
@@ -43,7 +46,7 @@ class SerialRXModule : public UCModule {
         state_ = ERROR;
       }
     }
-    if (micros() - last_message_time_ > 100000) {  // 100ms
+    if (micros() - last_message_time_ > 10000) {  // 10ms
       SendReady();
       message_.Clear();
     }
@@ -52,10 +55,18 @@ class SerialRXModule : public UCModule {
   }
 
   void SendReady() {
-    unsigned char msg[1];
-    msg[0] = state_;
-    Message rx_ack_message(1, 1, msg);
-    AcceptMessage(rx_ack_message);
+    if (!sending_) {
+      sending_ = true;
+      timed_callback_ = new TimedCallback<SerialRXModule>(0, this,
+          &SerialRXModule::WriteState);
+    }
+  }
+
+  void WriteState() {
+    Serial.write(state_);
+    sending_ = false;
+    state_ = READY;
+    last_message_time_ = micros();
   }
 
   virtual bool AcceptMessage(const Message &message) {
@@ -96,18 +107,18 @@ class SerialRXModule : public UCModule {
 
   virtual ~SerialRXModule() {}
  private:
-  int address_;
-  Message message_;
   SoftwareSerial *software_serial_;
-  bool clear_on_next_tick_;
+  int address_;
   bool sending_;
+  unsigned long last_message_time_;
+  unsigned char state_;
+  Message message_;
+  bool clear_on_next_tick_;
   unsigned char bytes_sending_[MAX_BUFFER_SIZE];
   int length_sending_;
-  unsigned char state_;
   //int index_sending_;
   TimedCallback<SerialRXModule> *timed_callback_;
 
-  unsigned long last_message_time_;
 };
 
 }  // namespace arduinoio

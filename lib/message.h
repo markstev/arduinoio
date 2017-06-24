@@ -110,11 +110,11 @@ class Message {
   }
   
  private:
+  int address_;
   int address_length_;
   int command_length_;
   int timeout_;
   
-  int address_;
   unsigned char command_[MAX_BUFFER_SIZE];
   
   // Used for constructing messages.

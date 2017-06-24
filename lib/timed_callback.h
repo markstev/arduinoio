@@ -27,10 +27,10 @@ class TimedCallback {
   ~TimedCallback() {
   }
  private:
+  unsigned long usec_delay_;
   T* object_;
   void (T::*member_func_)();
   unsigned long start_time_;
-  unsigned long usec_delay_;
 };
 
 }  // namespace arduinoio
