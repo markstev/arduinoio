@@ -105,12 +105,14 @@ class SerialInterface(object):
     self.baud = baud
     self.message = Message()
     self.device_basename = device_basename
+    print "Connecting to %s at %s" % (device_basename, baud)
     self.ReconnectIfNeeded()
 
   def Connect(self):
     self.ser = serial.Serial(self.port, self.baud, timeout=0, rtscts=True)  # 1s timeout
     #self.ser = serial.Serial(self.port, 50000, timeout=0)  # 1s timeout
-    time.sleep(1.0)
+    time.sleep(2.0)
+    print "Connected."
 
   def ReconnectIfNeeded(self):
     if time.time() > self.last_port_lookup_time + 30.0:
