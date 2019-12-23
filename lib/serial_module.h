@@ -2,8 +2,6 @@
 #define JDUINO_UC_SERIAL_MODULE_H_
 
 
-#include <SoftwareSerial.h>
-
 #include "message.h"
 #include "timed_callback.h"
 #include "uc_module.h"
@@ -17,9 +15,9 @@ const int MESSAGE_SIZE = 20;
 
 class SerialRXModule : public UCModule {
  public:
-  SerialRXModule(SoftwareSerial *software_serial, int address)
-    : software_serial_(software_serial), address_(address), sending_(false),
-    last_message_time_(micros()), state_(READY) {
+  SerialRXModule(int address, bool send_only)
+    : address_(address), sending_(false),
+    last_message_time_(micros()), state_(READY), send_only_(send_only) {
   }
 
   virtual const Message* Tick() {
@@ -33,6 +31,7 @@ class SerialRXModule : public UCModule {
       SendReady();
       return NULL;
     }
+    if (send_only_) return NULL;
     while (Serial.available()) {  //software_serial_->available()) {
       last_message_time_ = micros();
       bool finished = message_.AddByte(
@@ -107,8 +106,8 @@ class SerialRXModule : public UCModule {
 
   virtual ~SerialRXModule() {}
  private:
-  SoftwareSerial *software_serial_;
   int address_;
+  bool send_only_;
   bool sending_;
   unsigned long last_message_time_;
   unsigned char state_;
